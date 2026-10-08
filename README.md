@@ -36,7 +36,7 @@ Test order: for each repetition, for each destination, every algorithm back to b
 ## Output (in the results directory)
 
 - `samples.csv`: one row per sample: run id, repetition, destination, requested and actual algorithm, time, goodput, and every decoded `TCP_INFO` field.
-- `metadata.json`: arguments, host kernel, `TCP_INFO` struct format, units of every measured column, selected destinations, selection failures and shortfall, per-run records (bytes sent/acked, server-reported bytes, errors).
+- `metadata.json`: arguments, host kernel, `TCP_INFO` struct format, units of every measured column, selected destinations, selection failures and shortfall, destinations whose every run failed (`destinations_without_data`, `effective_destination_shortfall`), per-run records (bytes sent/acked, server-reported bytes, errors).
 - `goodput_summary.csv`: min / median / mean / p95 goodput (Mbit/s) per destination and algorithm.
 - `goodput_over_time.pdf`: goodput over time, one panel per destination.
 

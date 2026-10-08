@@ -350,8 +350,11 @@ def recv_json(sock):
         The decoded JSON object (a dict).
 
     Raises:
-        IperfError: the length is implausibly large, or the connection closed.
+        IperfError: the length is implausibly large, the connection closed,
+            or the JSON is not an object.
         json.JSONDecodeError: the payload was not valid JSON (handled by
+            run_experiment).
+        UnicodeDecodeError: the payload was not valid UTF-8 (handled by
             run_experiment).
     """
     (length,) = struct.unpack("!I", recv_exact(sock, 4))
@@ -359,7 +362,14 @@ def recv_json(sock):
         # Broken or non-iperf3 server; do not try to allocate this much.
         raise IperfError(f"server sent a {length}-byte JSON message, refusing")
     payload = recv_exact(sock, length)
-    return json.loads(payload.decode("utf-8"))
+    message = json.loads(payload.decode("utf-8"))
+
+    # Every iperf3 JSON message is an object. Anything else (a list, a bare
+    # number) means a broken server, and callers that look up keys in the
+    # message would crash on it.
+    if not isinstance(message, dict):
+        raise IperfError("server sent JSON that is not an object")
+    return message
 
 
 def raise_for_unexpected_state(sock, state, context):
@@ -773,8 +783,11 @@ def run_experiment(host, port, duration=60, interval=1.0, congestion=None,
     except TimeoutError as error:
         raise IperfError(f"timed out after {timeout} s (server unresponsive)") from error
 
-    # Server sent invalid JSON: not a compatible iperf3 server.
-    except json.JSONDecodeError as error:
+    # Server sent bytes that are not valid UTF-8 JSON: not a compatible
+    # iperf3 server. We list these two ValueError subclasses explicitly
+    # instead of catching ValueError, because open_data_stream raises a plain
+    # ValueError for an unavailable algorithm, which must reach the caller.
+    except (json.JSONDecodeError, UnicodeDecodeError) as error:
         raise IperfError(f"server sent invalid JSON: {error}") from error
 
     # Connection refused, reset, DNS failure, broken pipe, ...: covers
@@ -843,5 +856,19 @@ if __name__ == "__main__":
 
     # 1,250,000 bytes acked in 0.5 s = 2,500,000 bytes/s = 20,000,000 bits/s.
     assert compute_goodput_bps(1_000_000, 1.0, 2_250_000, 1.5) == 20_000_000
+
+    # JSON framing over a local socket pair (no network): a dict round-trips,
+    # and JSON that is not an object is rejected.
+    sender, receiver = socket.socketpair()
+    send_json(sender, {"time": 10})
+    assert recv_json(receiver) == {"time": 10}
+    send_json(sender, [1])
+    try:
+        recv_json(receiver)
+        raise AssertionError("non-object JSON was accepted")
+    except IperfError:
+        pass
+    sender.close()
+    receiver.close()
 
     print("self-check passed")

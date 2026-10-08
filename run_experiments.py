@@ -357,6 +357,35 @@ def run_all(destination_list, args, writer, csv_file, runs):
                 write_samples(writer, csv_file, run_columns, result)
 
 
+def destinations_without_data(selected, runs):
+    """List the selected destinations where every run failed.
+
+    This is the shortfall that happens after selection: a server can pass
+    the short selection probe and then fail every real test (for example,
+    it went offline or limits longer tests). It is not replaced, because
+    every algorithm must be measured over the same destinations (see
+    run_with_retries), so it is reported instead.
+
+    Args:
+        selected: dicts from destinations.select_destinations.
+        runs: per-run records from run_all.
+
+    Returns:
+        List of {"host", "port"} dicts, one per selected destination with
+        no run whose status is "ok". Empty if every destination has data.
+    """
+    destinations_with_data = set()
+    for run in runs:
+        if run["status"] == "ok":
+            destinations_with_data.add((run["host"], run["port"]))
+
+    missing = []
+    for destination in selected:
+        if (destination["host"], destination["port"]) not in destinations_with_data:
+            missing.append({"host": destination["host"], "port": destination["port"]})
+    return missing
+
+
 def write_metadata(path, args, selected, selection_failures, runs):
     """Write metadata.json describing the campaign.
 
@@ -371,6 +400,9 @@ def write_metadata(path, args, selected, selection_failures, runs):
         if run["status"] != "ok":
             failed_runs += 1
 
+    missing_destinations = destinations_without_data(selected, runs)
+    effective_destinations = len(selected) - len(missing_destinations)
+
     metadata = {
         "created": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "arguments": vars(args),
@@ -381,7 +413,13 @@ def write_metadata(path, args, selected, selection_failures, runs):
         "tcp_info_size_bytes": iperf3_client.TCP_INFO_SIZE,
         "units": measurement_units(),
         "requested_destinations": args.destinations,
+        # Shortfall at selection time: too few servers passed the probe.
         "destination_shortfall": args.destinations - len(selected),
+        # Shortfall in the final data: also counts selected destinations
+        # whose every run failed.
+        "effective_destinations": effective_destinations,
+        "effective_destination_shortfall": args.destinations - effective_destinations,
+        "destinations_without_data": missing_destinations,
         "destinations": selected,
         "selection_failures": selection_failures,
         "test_order": "for each repetition: for each destination: for each algorithm",
@@ -439,6 +477,13 @@ def main():
             # that were saved still have their context and units.
             write_metadata(os.path.join(output_dir, METADATA_FILE),
                            args, selected, selection_failures, runs)
+
+    # Report the final shortfall in the terminal too, not only in
+    # metadata.json (selection already warned about its own shortfall).
+    effective_destinations = len(selected) - len(destinations_without_data(selected, runs))
+    if effective_destinations < args.destinations:
+        logger.warning("shortfall: only %d of %d requested destinations produced data",
+                       effective_destinations, args.destinations)
 
     report.generate_report(output_dir)
 

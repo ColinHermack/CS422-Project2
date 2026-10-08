@@ -25,9 +25,12 @@ import iperf3_client
 logger = logging.getLogger(__name__)
 
 # Length of each probe test, seconds. Long enough to exercise the whole
-# protocol (params, data, results exchange), short enough that probing
-# many candidates stays quick.
-DEFAULT_PROBE_SECONDS = 2
+# protocol (params, data, results exchange) and to outlast iperf3's
+# --server-bitrate-limit averaging window (5 s by default): a rate-limited
+# server aborts the test only after that window, so a shorter probe would
+# pass it and every real test would then fail. Still short next to a 60 s
+# test, so probing many candidates stays reasonably quick.
+DEFAULT_PROBE_SECONDS = 10
 
 # Default probe budget per requested destination. With n = 10 this allows
 # 30 probes in total before giving up and reporting a shortfall.
