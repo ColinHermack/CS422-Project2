@@ -6,7 +6,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 CS 422 (Computer Networks, Fall 2026) Assignment 2: iPerf, TCP Statistics, and Congestion Control. Full spec in `assignment-2.pdf`. Due Oct 21, 2026 11:45 PM ET; graded by oral exam the week of Oct 26, so the user must be able to explain every line. See **Code style** below: readability and documentation are the top priority.
 
-`iperf3_client.py` holds the iperf3 protocol client and `run_experiment()` (Part 1a/1c). `destinations.py` loads the server list and picks n working servers by probing with short tests (Part 1b). Self-checks (run on any OS, no network): `python3 iperf3_client.py`, `python3 destinations.py`. Entry-point script and Dockerfile are not written yet; update this file with real commands once they are.
+`iperf3_client.py` holds the iperf3 protocol client and `run_experiment()` (Part 1a/1c). `destinations.py` loads the server list and picks n working servers by probing with short tests (Part 1b). `run_experiments.py` is the single entry point: selects destinations, runs every (repetition, destination, algorithm) test, writes `samples.csv` + `metadata.json` to `results/<timestamp>/`, then calls `report.py`, which writes `goodput_summary.csv` and `goodput_over_time.pdf` (Part 1c) from `samples.csv` only.
+
+Commands:
+- Self-checks (any OS, no network): `python3 iperf3_client.py`, `python3 destinations.py`, `.venv/bin/python report.py`.
+- Full run (Linux only): `python3 run_experiments.py listed_iperf3_servers.csv -n 10 --duration 60 --interval 1 --repetitions 3 --algorithms cubic reno bbr`.
+- Rebuild summary/plots from saved data (any OS): `python3 run_experiments.py --report-only results/<dir>`.
+- Linux smoke test from macOS: `docker run --rm -v "$PWD":/app -w /app ubuntu:24.04 sh -c "apt-get update -qq && apt-get install -y -qq python3 python3-matplotlib && python3 run_experiments.py listed_iperf3_servers.csv -n 2 --duration 5 --algorithms cubic reno"` (Docker Desktop's kernel has no bbr).
+
+Dockerfile is not written yet.
 
 ## Code style
 

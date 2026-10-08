@@ -106,62 +106,63 @@ TCP_CA_NAME_MAX = 16
 
 # Layout of Linux's struct tcp_info (include/uapi/linux/tcp.h), in order,
 # up to and including tcpi_delivery_rate (present since Linux 4.9). Each
-# entry is (field name without the "tcpi_" prefix, struct format code):
+# entry is (field name without the "tcpi_" prefix, struct format code, unit):
 #   "B" = unsigned 8-bit, "I" = unsigned 32-bit, "Q" = unsigned 64-bit.
-# The kernel struct has more fields after delivery_rate; we stop here
-# because these are all we need.
+# The unit is saved with the measurements (metadata.json) so the raw data
+# documents itself. The kernel struct has more fields after delivery_rate;
+# we stop here because these are all we need.
 TCP_INFO_FIELDS = [
-    ("state", "B"),            # TCP state (1 = ESTABLISHED)
-    ("ca_state", "B"),         # congestion state: 0 Open, 1 Disorder, 2 CWR, 3 Recovery, 4 Loss
-    ("retransmits", "B"),      # retransmissions of the oldest unacked segment (resets on ACK)
-    ("probes", "B"),           # zero-window probes sent
-    ("backoff", "B"),          # retransmission-timeout backoff count
-    ("options", "B"),          # bit flags for negotiated options (SACK, timestamps, ...)
-    ("wscale", "B"),           # low 4 bits: send window scale, high 4 bits: receive window scale
-    ("app_limited_flags", "B"),  # bit 0: delivery_rate_app_limited; bits 1-2: fastopen_client_fail
-    ("rto", "I"),              # retransmission timeout, microseconds
-    ("ato", "I"),              # delayed-ACK timeout, microseconds
-    ("snd_mss", "I"),          # sender maximum segment size, bytes
-    ("rcv_mss", "I"),          # receiver maximum segment size, bytes
-    ("unacked", "I"),          # segments sent but not yet acknowledged
-    ("sacked", "I"),           # segments selectively acknowledged (SACK)
-    ("lost", "I"),             # segments currently presumed lost
-    ("retrans", "I"),          # segments currently retransmitted and not yet acknowledged
-    ("fackets", "I"),          # unused in modern kernels (always 0)
-    ("last_data_sent", "I"),   # time since last data sent, milliseconds
-    ("last_ack_sent", "I"),    # not implemented by Linux (always 0)
-    ("last_data_recv", "I"),   # time since last data received, milliseconds
-    ("last_ack_recv", "I"),    # time since last ACK received, milliseconds
-    ("pmtu", "I"),             # path MTU, bytes
-    ("rcv_ssthresh", "I"),     # receive-side slow start threshold, bytes
-    ("rtt", "I"),              # smoothed RTT (srtt), microseconds
-    ("rttvar", "I"),           # RTT variation, microseconds
-    ("snd_ssthresh", "I"),     # slow start threshold, segments
-    ("snd_cwnd", "I"),         # congestion window, segments
-    ("advmss", "I"),           # advertised MSS, bytes
-    ("reordering", "I"),       # estimated packet reordering, segments
-    ("rcv_rtt", "I"),          # receiver-side RTT estimate, microseconds
-    ("rcv_space", "I"),        # receive buffer space estimate, bytes
-    ("total_retrans", "I"),    # total retransmitted segments over the connection's life
-    ("pacing_rate", "Q"),      # current pacing rate, bytes/second
-    ("max_pacing_rate", "Q"),  # pacing rate cap, bytes/second (unlimited = 2^64 - 1)
-    ("bytes_acked", "Q"),      # cumulative bytes acknowledged by the receiver
-    ("bytes_received", "Q"),   # cumulative bytes received from the peer
-    ("segs_out", "I"),         # total segments sent (including retransmits and pure ACKs)
-    ("segs_in", "I"),          # total segments received
-    ("notsent_bytes", "I"),    # bytes in the send buffer not yet sent, bytes
-    ("min_rtt", "I"),          # minimum RTT observed, microseconds
-    ("data_segs_in", "I"),     # segments received that carried data
-    ("data_segs_out", "I"),    # segments sent that carried data
-    ("delivery_rate", "Q"),    # most recent delivery rate estimate, bytes/second
+    ("state", "B", "code"),              # TCP state (1 = ESTABLISHED)
+    ("ca_state", "B", "code"),           # congestion state: 0 Open, 1 Disorder, 2 CWR, 3 Recovery, 4 Loss
+    ("retransmits", "B", "count"),       # retransmissions of the oldest unacked segment (resets on ACK)
+    ("probes", "B", "count"),            # zero-window probes sent
+    ("backoff", "B", "count"),           # retransmission-timeout backoff count
+    ("options", "B", "bit flags"),       # negotiated options (SACK, timestamps, ...)
+    ("wscale", "B", "bit fields"),       # low 4 bits: send window scale, high 4 bits: receive window scale
+    ("app_limited_flags", "B", "bit flags"),  # bit 0: delivery_rate_app_limited; bits 1-2: fastopen_client_fail
+    ("rto", "I", "microseconds"),        # retransmission timeout
+    ("ato", "I", "microseconds"),        # delayed-ACK timeout
+    ("snd_mss", "I", "bytes"),           # sender maximum segment size
+    ("rcv_mss", "I", "bytes"),           # receiver maximum segment size
+    ("unacked", "I", "segments"),        # sent but not yet acknowledged
+    ("sacked", "I", "segments"),         # selectively acknowledged (SACK)
+    ("lost", "I", "segments"),           # currently presumed lost
+    ("retrans", "I", "segments"),        # currently retransmitted and not yet acknowledged
+    ("fackets", "I", "segments"),        # unused in modern kernels (always 0)
+    ("last_data_sent", "I", "milliseconds"),  # time since last data sent
+    ("last_ack_sent", "I", "milliseconds"),   # not implemented by Linux (always 0)
+    ("last_data_recv", "I", "milliseconds"),  # time since last data received
+    ("last_ack_recv", "I", "milliseconds"),   # time since last ACK received
+    ("pmtu", "I", "bytes"),              # path MTU
+    ("rcv_ssthresh", "I", "bytes"),      # receive-side slow start threshold
+    ("rtt", "I", "microseconds"),        # smoothed RTT (srtt)
+    ("rttvar", "I", "microseconds"),     # RTT variation
+    ("snd_ssthresh", "I", "segments"),   # slow start threshold
+    ("snd_cwnd", "I", "segments"),       # congestion window
+    ("advmss", "I", "bytes"),            # advertised MSS
+    ("reordering", "I", "segments"),     # estimated packet reordering
+    ("rcv_rtt", "I", "microseconds"),    # receiver-side RTT estimate
+    ("rcv_space", "I", "bytes"),         # receive buffer space estimate
+    ("total_retrans", "I", "segments"),  # total retransmitted over the connection's life
+    ("pacing_rate", "Q", "bytes/second"),      # current pacing rate
+    ("max_pacing_rate", "Q", "bytes/second"),  # pacing rate cap (unlimited = 2^64 - 1)
+    ("bytes_acked", "Q", "bytes"),       # cumulative bytes acknowledged by the receiver
+    ("bytes_received", "Q", "bytes"),    # cumulative bytes received from the peer
+    ("segs_out", "I", "segments"),       # total sent (including retransmits and pure ACKs)
+    ("segs_in", "I", "segments"),        # total received
+    ("notsent_bytes", "I", "bytes"),     # bytes in the send buffer not yet sent
+    ("min_rtt", "I", "microseconds"),    # minimum RTT observed
+    ("data_segs_in", "I", "segments"),   # received segments that carried data
+    ("data_segs_out", "I", "segments"),  # sent segments that carried data
+    ("delivery_rate", "Q", "bytes/second"),  # most recent delivery rate estimate
 ]
 
 
 def build_tcp_info_format(fields):
-    """Build the struct format string for a list of (name, code) fields.
+    """Build the struct format string for a list of (name, code, unit) fields.
 
     Args:
-        fields: list of (field_name, struct_code) pairs, in struct order.
+        fields: list of (field_name, struct_code, unit) tuples, in struct order.
 
     Returns:
         A format string for the struct module. It starts with "=", meaning
@@ -169,7 +170,7 @@ def build_tcp_info_format(fields):
         struct because every field is already naturally aligned.
     """
     format_string = "="
-    for _name, code in fields:
+    for _name, code, _unit in fields:
         format_string += code
     return format_string
 
@@ -190,7 +191,7 @@ def decode_tcp_info(raw):
 
     Returns:
         Dict mapping each field name in TCP_INFO_FIELDS to its integer value.
-        Units are listed next to each field in TCP_INFO_FIELDS.
+        Units are the third element of each entry in TCP_INFO_FIELDS.
 
     Raises:
         RuntimeError: the kernel returned fewer bytes than we know how to
@@ -207,7 +208,7 @@ def decode_tcp_info(raw):
     values = struct.unpack(TCP_INFO_FORMAT, raw[:TCP_INFO_SIZE])
 
     info = {}
-    for (name, _code), value in zip(TCP_INFO_FIELDS, values):
+    for (name, _code, _unit), value in zip(TCP_INFO_FIELDS, values):
         info[name] = value
     return info
 
@@ -817,7 +818,7 @@ if __name__ == "__main__":
     for index in range(len(TCP_INFO_FIELDS)):
         fake_values.append(index)
     field_names = []
-    for name, _code in TCP_INFO_FIELDS:
+    for name, _code, _unit in TCP_INFO_FIELDS:
         field_names.append(name)
     fake_values[field_names.index("snd_cwnd")] = 10
     fake_values[field_names.index("rtt")] = 25_000
