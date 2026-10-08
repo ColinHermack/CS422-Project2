@@ -4,9 +4,35 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-CS 422 (Computer Networks, Fall 2026) Assignment 2: iPerf, TCP Statistics, and Congestion Control. Full spec in `assignment-2.pdf`. Due Oct 21, 2026 11:45 PM ET; graded by oral exam the week of Oct 26, so the user must be able to explain every line. Keep code readable over clever.
+CS 422 (Computer Networks, Fall 2026) Assignment 2: iPerf, TCP Statistics, and Congestion Control. Full spec in `assignment-2.pdf`. Due Oct 21, 2026 11:45 PM ET; graded by oral exam the week of Oct 26, so the user must be able to explain every line. See **Code style** below: readability and documentation are the top priority.
 
-No code exists yet. Update this file with real commands once the entry-point script and Dockerfile are written.
+`iperf3_client.py` holds the iperf3 protocol client and `run_experiment()` (Part 1a/1c). `destinations.py` loads the server list and picks n working servers by probing with short tests (Part 1b). `run_experiments.py` is the single entry point: selects destinations, runs every (repetition, destination, algorithm) test, writes `samples.csv` + `metadata.json` to `results/<timestamp>/`, then calls `report.py`, which writes `goodput_summary.csv` and `goodput_over_time.pdf` (Part 1c) from `samples.csv` only.
+
+Commands:
+- Self-checks (any OS, no network): `python3 iperf3_client.py`, `python3 destinations.py`, `.venv/bin/python report.py`.
+- Full run (Linux only): `python3 run_experiments.py listed_iperf3_servers.csv -n 10 --duration 60 --interval 1 --repetitions 3 --algorithms cubic reno bbr`.
+- Rebuild summary/plots from saved data (any OS): `python3 run_experiments.py --report-only results/<dir>`.
+- Linux smoke test from macOS: `docker build -t cs422-a2 . && docker run --rm --network host --cap-add NET_ADMIN -v "$PWD/results":/app/results cs422-a2 listed_iperf3_servers.csv -n 2 --duration 5 --algorithms cubic reno` (Docker Desktop's kernel has no bbr, so the default CMD exits at the algorithm check there).
+
+`Dockerfile` runs `run_experiments.py` with the full campaign as its default `CMD`; its header comment documents the host setup and `docker run` flags.
+
+## Code style
+
+Code must be easy for a human to read and understand. The user will be orally examined on every line, so readability is the top priority and overrides brevity, cleverness, and minimal diffs.
+
+- **Readability first.** Prefer plain, explicit code: descriptive names, short functions with one job, straightforward control flow. Avoid dense one-liners, nested comprehensions, clever tricks, and unnecessary abstraction. If a simpler version is a few lines longer but easier to follow, use it.
+- **Comprehensive documentation.** Every module gets a docstring explaining its purpose and how it fits the pipeline. Every function gets a docstring covering what it does, its arguments (with units), return value, and exceptions raised.
+- **Explain the why, not just the what.** Comment non-obvious logic, especially protocol steps (cite the iperf3 state or source file they mirror), `struct` formats and byte layouts, socket options, timing math, and units (bytes vs. bits, microseconds vs. seconds, segments vs. bytes).
+- **Name constants.** No magic numbers: protocol state codes, sizes, and timeouts are named constants with a comment on their meaning and source.
+- **Document error paths.** For each failure case (timeout, busy server, rejected params, premature termination), say in a comment what triggers it and how it is handled.
+
+## Setup
+
+```sh
+python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+```
+
+Keep dependencies minimal: the iperf3 client and stats use only the stdlib (`socket`, `struct`, `json`, `statistics`); `matplotlib` is only for PDF plots (use the `Agg` backend).
 
 ## Hard constraints from the spec
 
@@ -20,7 +46,7 @@ No code exists yet. Update this file with real commands once the entry-point scr
 
 ## Platform
 
-The dev machine is macOS, but the code must run on Linux (or WSL2). `TCP_INFO` layout and `TCP_CONGESTION` are Linux-specific; the `struct tcp_info` decoding format depends on the host kernel version and must be documented in the report. Docker on macOS uses a Linux VM kernel, which may lack `bbr`; real runs should happen on a Linux host. Do not expect socket-stat code to work natively on macOS.
+The dev machine is macOS, but the code must run on Linux (or WSL2). `TCP_INFO` layout and `TCP_CONGESTION` are Linux-specific; the `struct tcp_info` decoding format depends on the host kernel version and must be documented in the report. Docker on macOS uses a Linux VM kernel, which may lack `bbr`; real runs should happen on a Linux host. Do not expect socket-stat code to work natively on macOS. Docker Desktop on macOS also proxies outbound TCP, so `TCP_INFO` there describes the hop to Docker's proxy (sub-ms RTT, cwnd stuck near 10), not the real path: fine for protocol testing, useless for measurements.
 
 ## Server list
 
