@@ -33,6 +33,23 @@ Test order: for each repetition, for each destination, every algorithm back to b
 
 `bbr` usually needs `sudo modprobe tcp_bbr` first; the script exits early if an algorithm can't be set.
 
+## Docker
+
+Runs the full pipeline in `ubuntu:24.04`. The container uses the host's kernel, so run it on a Linux host (Ubuntu 22.04+) or WSL2, not Docker Desktop on macOS (its network proxy makes `TCP_INFO` describe the hop to the proxy, and its kernel has no bbr).
+
+```sh
+sudo modprobe tcp_bbr      # containers cannot load kernel modules
+docker build -t cs422-a2 .
+docker run --rm --network host --cap-add NET_ADMIN \
+    -v "$PWD/results":/app/results cs422-a2
+```
+
+- `--network host`: sockets use the host's network stack directly, with no NAT layer.
+- `--cap-add NET_ADMIN`: needed to select algorithms outside `net.ipv4.tcp_allowed_congestion_control` (usually bbr).
+- `-v ...`: keeps the results on the host.
+
+With no arguments the image runs `-n 10 --duration 60 --interval 1 --repetitions 3 --algorithms cubic reno bbr`; arguments after the image name replace that (same options as above). Record `uname -r` and `sysctl net.ipv4.tcp_available_congestion_control` for the report (the kernel version is also saved in `metadata.json`).
+
 ## Output (in the results directory)
 
 - `samples.csv`: one row per sample: run id, repetition, destination, requested and actual algorithm, time, goodput, and every decoded `TCP_INFO` field.

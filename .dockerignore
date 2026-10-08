@@ -1,0 +1,9 @@
+# Keep the build context small and avoid copying the macOS virtualenv or
+# earlier results into the image (the Dockerfile copies only what it needs,
+# but Docker still sends the whole context to the builder).
+.git/
+.venv/
+results/
+__pycache__/
+*.pdf
+.DS_Store

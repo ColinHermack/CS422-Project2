@@ -12,9 +12,9 @@ Commands:
 - Self-checks (any OS, no network): `python3 iperf3_client.py`, `python3 destinations.py`, `.venv/bin/python report.py`.
 - Full run (Linux only): `python3 run_experiments.py listed_iperf3_servers.csv -n 10 --duration 60 --interval 1 --repetitions 3 --algorithms cubic reno bbr`.
 - Rebuild summary/plots from saved data (any OS): `python3 run_experiments.py --report-only results/<dir>`.
-- Linux smoke test from macOS: `docker run --rm -v "$PWD":/app -w /app ubuntu:24.04 sh -c "apt-get update -qq && apt-get install -y -qq python3 python3-matplotlib && python3 run_experiments.py listed_iperf3_servers.csv -n 2 --duration 5 --algorithms cubic reno"` (Docker Desktop's kernel has no bbr).
+- Linux smoke test from macOS: `docker build -t cs422-a2 . && docker run --rm --network host --cap-add NET_ADMIN -v "$PWD/results":/app/results cs422-a2 listed_iperf3_servers.csv -n 2 --duration 5 --algorithms cubic reno` (Docker Desktop's kernel has no bbr, so the default CMD exits at the algorithm check there).
 
-Dockerfile is not written yet.
+`Dockerfile` runs `run_experiments.py` with the full campaign as its default `CMD`; its header comment documents the host setup and `docker run` flags.
 
 ## Code style
 
