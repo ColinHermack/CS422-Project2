@@ -11,7 +11,8 @@ Pipeline:
        from the data socket every --interval seconds (Part 1c / 2a).
     4. Save every sample to samples.csv and the run details to
        metadata.json in the results directory.
-    5. Build the goodput summary table and plot (report.py, Part 1c).
+    5. Build the goodput summary table and plots (report.py, Parts 1c
+       and 2b).
 
 Usage:
 
@@ -66,6 +67,10 @@ DEFAULT_RESULTS_ROOT = "results"
 
 METADATA_FILE = "metadata.json"
 
+# Buffer size for measuring the kernel's struct tcp_info length; larger than
+# any kernel's struct (under 300 bytes in current kernels).
+KERNEL_TCP_INFO_PROBE_BYTES = 1024
+
 # Columns of samples.csv that describe which run a sample belongs to. Each
 # sample row also has every key of a take_sample() dict (see
 # sample_csv_columns).
@@ -84,11 +89,11 @@ def sample_csv_columns():
     """List the columns of samples.csv, in order.
 
     Returns:
-        RUN_COLUMNS, then the timing and goodput columns added by
+        RUN_COLUMNS, then the timing and interval columns added by
         iperf3_client.take_sample, then every TCP_INFO field.
     """
     columns = list(RUN_COLUMNS)
-    columns.extend(["t", "unix_time", "goodput_bps"])
+    columns.extend(["t", "unix_time", "goodput_bps", "retrans_segs_interval"])
     for name, _code, _unit in iperf3_client.TCP_INFO_FIELDS:
         columns.append(name)
     return columns
@@ -106,6 +111,7 @@ def measurement_units():
         "t": "seconds since the start of sending",
         "unix_time": "seconds since the Unix epoch",
         "goodput_bps": "bits/second, over the interval ending at t",
+        "retrans_segs_interval": "segments retransmitted during the interval ending at t",
     }
     for name, _code, unit in iperf3_client.TCP_INFO_FIELDS:
         units[name] = unit
@@ -158,6 +164,11 @@ def parse_args():
         help="random seed for destination selection order (default: random)",
     )
     parser.add_argument(
+        "--representative", metavar="HOST:PORT",
+        help="destination for the TCP stats plots (default: picked automatically, "
+             "see report.choose_representative_destination)",
+    )
+    parser.add_argument(
         "--report-only", metavar="RESULTS_DIR",
         help="skip the experiments; rebuild the summary and plots from an existing results directory",
     )
@@ -174,7 +185,30 @@ def parse_args():
         parser.error("--interval must be positive")
     if args.repetitions < 1:
         parser.error("--repetitions must be at least 1")
+    if args.representative is not None:
+        args.representative = parse_destination(parser, args.representative)
     return args
+
+
+def parse_destination(parser, text):
+    """Split a "HOST:PORT" command-line value into (host, port).
+
+    rpartition splits at the last colon, so the host part may itself
+    contain colons (an IPv6 address).
+
+    Args:
+        parser: the ArgumentParser, used to report a bad value.
+        text: the value as typed, e.g. "iperf.example.net:5201".
+
+    Returns:
+        (host, port) with port as an int.
+
+    Exits (via parser.error) if text is not HOST:PORT with a numeric port.
+    """
+    host, _colon, port = text.rpartition(":")
+    if host == "" or not port.isdigit():
+        parser.error(f"--representative must be HOST:PORT, got {text!r}")
+    return host, int(port)
 
 
 def find_unavailable_algorithms(algorithms):
@@ -202,6 +236,44 @@ def find_unavailable_algorithms(algorithms):
         finally:
             test_sock.close()
     return unavailable
+
+
+def read_kernel_tcp_settings():
+    """Read the host kernel's TCP settings that matter for the measurements.
+
+    Together with the kernel version, these document what the decoding in
+    iperf3_client.TCP_INFO_FIELDS ran against: the kernel's struct
+    tcp_info may be longer than the TCP_INFO_SIZE-byte prefix we decode
+    (newer kernels append fields), but never shorter.
+
+    Returns:
+        Dict with:
+            "default_congestion_control": algorithm sockets get when they
+                do not ask for one (Part 2 uses this, normally cubic),
+            "available_congestion_control": algorithms the kernel has loaded,
+            "tcp_info_kernel_size_bytes": length of struct tcp_info this
+                kernel returns. getsockopt(TCP_INFO) works on an unconnected
+                socket, so a throwaway one is enough.
+    """
+    with open("/proc/sys/net/ipv4/tcp_congestion_control", encoding="ascii") as file:
+        default_algorithm = file.read().strip()
+    with open("/proc/sys/net/ipv4/tcp_available_congestion_control", encoding="ascii") as file:
+        available_algorithms = file.read().split()
+
+    test_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        # Ask for more than any kernel returns; the reply's length is the
+        # kernel's struct size.
+        raw = test_sock.getsockopt(socket.IPPROTO_TCP, socket.TCP_INFO,
+                                   KERNEL_TCP_INFO_PROBE_BYTES)
+    finally:
+        test_sock.close()
+
+    return {
+        "default_congestion_control": default_algorithm,
+        "available_congestion_control": available_algorithms,
+        "tcp_info_kernel_size_bytes": len(raw),
+    }
 
 
 def run_with_retries(destination, algorithm, duration, interval):
@@ -338,7 +410,10 @@ def run_all(destination_list, args, writer, csv_file, runs):
                     "server_ip": result["server_ip"],
                     "algorithm_used": result["congestion"],
                     "start_unix_time": first_sample["unix_time"],
-                    "bytes_sent": result["bytes_sent"],
+                    # Bytes our client handed to send(). Not the same as the
+                    # tcp_info column bytes_sent, which is what the kernel put
+                    # on the wire and so also counts retransmissions.
+                    "app_bytes_sent": result["bytes_sent"],
                     "bytes_acked": final_sample["bytes_acked"],
                     "server_bytes_received": server_bytes_received(result["server_results"]),
                     "total_retrans": final_sample["total_retrans"],
@@ -386,12 +461,13 @@ def destinations_without_data(selected, runs):
     return missing
 
 
-def write_metadata(path, args, selected, selection_failures, runs):
+def write_metadata(path, args, kernel_settings, selected, selection_failures, runs):
     """Write metadata.json describing the campaign.
 
     Args:
         path: file to write.
         args: parsed command line.
+        kernel_settings: dict from read_kernel_tcp_settings.
         selected, selection_failures: from destinations.select_destinations.
         runs: per-run records from run_all.
     """
@@ -409,6 +485,7 @@ def write_metadata(path, args, selected, selection_failures, runs):
         # TCP behavior and the tcp_info layout depend on the host kernel.
         "host_kernel": platform.release(),
         "host_platform": platform.platform(),
+        "kernel_tcp_settings": kernel_settings,
         "tcp_info_format": iperf3_client.TCP_INFO_FORMAT,
         "tcp_info_size_bytes": iperf3_client.TCP_INFO_SIZE,
         "units": measurement_units(),
@@ -436,7 +513,7 @@ def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
     if args.report_only is not None:
-        report.generate_report(args.report_only)
+        report.generate_report(args.report_only, args.representative)
         return
 
     # TCP_CONGESTION only exists in Python's socket module on Linux.
@@ -450,6 +527,8 @@ def main():
             "Check /proc/sys/net/ipv4/tcp_available_congestion_control "
             "(load bbr with 'modprobe tcp_bbr') and tcp_allowed_congestion_control."
         )
+
+    kernel_settings = read_kernel_tcp_settings()
 
     output_dir = args.output
     if output_dir is None:
@@ -476,7 +555,7 @@ def main():
             # Written even if the campaign is interrupted, so the samples
             # that were saved still have their context and units.
             write_metadata(os.path.join(output_dir, METADATA_FILE),
-                           args, selected, selection_failures, runs)
+                           args, kernel_settings, selected, selection_failures, runs)
 
     # Report the final shortfall in the terminal too, not only in
     # metadata.json (selection already warned about its own shortfall).
@@ -485,7 +564,7 @@ def main():
         logger.warning("shortfall: only %d of %d requested destinations produced data",
                        effective_destinations, args.destinations)
 
-    report.generate_report(output_dir)
+    report.generate_report(output_dir, args.representative)
 
 
 if __name__ == "__main__":

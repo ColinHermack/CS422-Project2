@@ -2,7 +2,7 @@
 
 From-scratch Python iperf3 client that measures goodput and TCP statistics (`TCP_INFO`) against public iperf3 servers, comparing congestion control algorithms.
 
-Requires Linux (or WSL2) for experiments: `TCP_INFO` and `TCP_CONGESTION` are Linux socket options.
+Requires Linux 5.4+ (or WSL2) for experiments: `TCP_INFO` and `TCP_CONGESTION` are Linux socket options, and the decoded `struct tcp_info` prefix ends at `tcpi_snd_wnd` (added in 5.4).
 
 ## Setup
 
@@ -27,6 +27,7 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 | `--algorithms` | `cubic reno bbr` | congestion control algorithms to test |
 | `--output` | `results/<YYYYmmdd-HHMMSS>` | results directory |
 | `--seed` | random | seed for destination selection order |
+| `--representative HOST:PORT` | automatic | destination for the TCP stats plots (default: the destination with data for every algorithm whose mean goodput is the median) |
 | `--report-only DIR` | | rebuild summary and plots from an existing results directory |
 
 Test order: for each repetition, for each destination, every algorithm back to back.
@@ -52,10 +53,20 @@ With no arguments the image runs `-n 10 --duration 60 --interval 1 --repetitions
 
 ## Output (in the results directory)
 
-- `samples.csv`: one row per sample: run id, repetition, destination, requested and actual algorithm, time, goodput, and every decoded `TCP_INFO` field.
-- `metadata.json`: arguments, host kernel, `TCP_INFO` struct format, units of every measured column, selected destinations, selection failures and shortfall, destinations whose every run failed (`destinations_without_data`, `effective_destination_shortfall`), per-run records (bytes sent/acked, server-reported bytes, errors).
+- `samples.csv`: one row per sample: run id, repetition, destination, requested and actual algorithm, time, goodput, retransmitted segments in the interval (loss proxy), and every decoded `TCP_INFO` field.
+- `metadata.json`: arguments, host kernel, default and available congestion control, the kernel's `struct tcp_info` length, `TCP_INFO` struct format, units of every measured column, selected destinations, selection failures and shortfall, destinations whose every run failed (`destinations_without_data`, `effective_destination_shortfall`), per-run records (bytes sent/acked, server-reported bytes, errors).
 - `goodput_summary.csv`: min / median / mean / p95 goodput (Mbit/s) per destination and algorithm.
 - `goodput_over_time.pdf`: goodput over time, one panel per destination.
+- `tcp_timeseries_<algorithm>.pdf`: cwnd, RTT, retransmissions, and goodput over time for the representative destination (same axes for every algorithm).
+- `tcp_scatter_<algorithm>.pdf`: cwnd, RTT, and retransmissions against goodput for the representative destination.
+
+## Report
+
+`report/report.md` is the written report. Build it from the repository root (needs pandoc and a LaTeX engine; it embeds the PDF plots directly):
+
+```sh
+pandoc report/report.md -o report/report.pdf
+```
 
 ## Self-checks (any OS, no network)
 
