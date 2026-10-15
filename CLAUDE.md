@@ -6,12 +6,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 CS 422 (Computer Networks, Fall 2026) Assignment 2: iPerf, TCP Statistics, and Congestion Control. Full spec in `assignment-2.pdf`. Due Oct 21, 2026 11:45 PM ET; graded by oral exam the week of Oct 26, so the user must be able to explain every line. See **Code style** below: readability and documentation are the top priority.
 
-`iperf3_client.py` holds the iperf3 protocol client and `run_experiment()` (Part 1a/1c). `destinations.py` loads the server list and picks n working servers by probing with short tests (Part 1b). `run_experiments.py` is the single entry point: selects destinations, runs every (repetition, destination, algorithm) test, writes `samples.csv` + `metadata.json` to `results/<timestamp>/`, then calls `report.py`, which writes `goodput_summary.csv` and `goodput_over_time.pdf` (Part 1c) from `samples.csv` only.
+`iperf3_client.py` holds the iperf3 protocol client and `run_experiment()` (Part 1a/1c). `destinations.py` loads the server list and picks n working servers by probing with short tests (Part 1b). `run_experiments.py` is the single entry point: selects destinations, runs every (repetition, destination, algorithm) test, writes `samples.csv` + `metadata.json` to `results/<timestamp>/`, then calls `report.py`, which writes `goodput_summary.csv` and `goodput_over_time.pdf` (Part 1c) and, for one representative destination, `tcp_timeseries_<algorithm>.pdf` and `tcp_scatter_<algorithm>.pdf` (Part 2b, reused for 3a) from `samples.csv` only. The written report is `report/report.md` (markdown, converted to PDF with pandoc + LaTeX).
 
 Commands:
 - Self-checks (any OS, no network): `python3 iperf3_client.py`, `python3 destinations.py`, `.venv/bin/python report.py`.
 - Full run (Linux only): `python3 run_experiments.py listed_iperf3_servers.csv -n 10 --duration 60 --interval 1 --repetitions 3 --algorithms cubic reno bbr`.
-- Rebuild summary/plots from saved data (any OS): `python3 run_experiments.py --report-only results/<dir>`.
+- Rebuild summary/plots from saved data (any OS): `.venv/bin/python run_experiments.py --report-only results/<dir> [--representative HOST:PORT]`.
+- Build the report (from the repo root): `pandoc report/report.md -o report/report.pdf`.
 - Linux smoke test from macOS: `docker build -t cs422-a2 . && docker run --rm --network host --cap-add NET_ADMIN -v "$PWD/results":/app/results cs422-a2 listed_iperf3_servers.csv -n 2 --duration 5 --algorithms cubic reno` (Docker Desktop's kernel has no bbr, so the default CMD exits at the algorithm check there).
 
 `Dockerfile` runs `run_experiments.py` with the full campaign as its default `CMD`; its header comment documents the host setup and `docker run` flags.

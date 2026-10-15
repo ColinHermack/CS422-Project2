@@ -105,12 +105,13 @@ TCP_CA_NAME_MAX = 16
 # ---------------------------------------------------------------------------
 
 # Layout of Linux's struct tcp_info (include/uapi/linux/tcp.h), in order,
-# up to and including tcpi_delivery_rate (present since Linux 4.9). Each
-# entry is (field name without the "tcpi_" prefix, struct format code, unit):
+# up to and including tcpi_snd_wnd (the last field added in Linux 5.4;
+# Ubuntu 22.04 ships 5.15). Each entry is (field name without the "tcpi_"
+# prefix, struct format code, unit):
 #   "B" = unsigned 8-bit, "I" = unsigned 32-bit, "Q" = unsigned 64-bit.
 # The unit is saved with the measurements (metadata.json) so the raw data
-# documents itself. The kernel struct has more fields after delivery_rate;
-# we stop here because these are all we need.
+# documents itself. Newer kernels append more fields after snd_wnd; we stop
+# here because these are all we need.
 TCP_INFO_FIELDS = [
     ("state", "B", "code"),              # TCP state (1 = ESTABLISHED)
     ("ca_state", "B", "code"),           # congestion state: 0 Open, 1 Disorder, 2 CWR, 3 Recovery, 4 Loss
@@ -155,6 +156,19 @@ TCP_INFO_FIELDS = [
     ("data_segs_in", "I", "segments"),   # received segments that carried data
     ("data_segs_out", "I", "segments"),  # sent segments that carried data
     ("delivery_rate", "Q", "bytes/second"),  # most recent delivery rate estimate
+    # Added in Linux 4.10 to 4.19:
+    ("busy_time", "Q", "microseconds"),       # time busy sending data
+    ("rwnd_limited", "Q", "microseconds"),    # part of busy_time stalled by the receiver's window
+    ("sndbuf_limited", "Q", "microseconds"),  # part of busy_time stalled by our send buffer
+    ("delivered", "I", "segments"),      # total delivered to the receiver (acked or SACKed)
+    ("delivered_ce", "I", "segments"),   # delivered segments marked ECN congestion-experienced
+    ("bytes_sent", "Q", "bytes"),        # total data bytes sent, including retransmits
+    ("bytes_retrans", "Q", "bytes"),     # total data bytes retransmitted
+    ("dsack_dups", "I", "segments"),     # duplicate segments reported by D-SACK (spurious retransmits)
+    ("reord_seen", "I", "count"),        # packet reordering events seen
+    # Added in Linux 5.4:
+    ("rcv_ooopack", "I", "segments"),    # out-of-order packets received
+    ("snd_wnd", "I", "bytes"),           # receive window the server advertised (after scaling)
 ]
 
 
@@ -176,7 +190,7 @@ def build_tcp_info_format(fields):
 
 
 TCP_INFO_FORMAT = build_tcp_info_format(TCP_INFO_FIELDS)
-TCP_INFO_SIZE = struct.calcsize(TCP_INFO_FORMAT)  # 168 bytes
+TCP_INFO_SIZE = struct.calcsize(TCP_INFO_FORMAT)  # 232 bytes
 
 # Buffer size to request from getsockopt. Larger than TCP_INFO_SIZE because
 # newer kernels return a longer struct; we only decode the first part.
@@ -195,13 +209,13 @@ def decode_tcp_info(raw):
 
     Raises:
         RuntimeError: the kernel returned fewer bytes than we know how to
-            decode (kernel older than 4.9). This is a host problem, not a
+            decode (kernel older than 5.4). This is a host problem, not a
             server problem, so it is not an IperfError.
     """
     if len(raw) < TCP_INFO_SIZE:
         raise RuntimeError(
             f"kernel returned {len(raw)} bytes of tcp_info, need {TCP_INFO_SIZE} "
-            "(Linux 4.9 or newer required)"
+            "(Linux 5.4 or newer required)"
         )
 
     # Only decode the prefix we know; newer kernels append more fields.
@@ -562,8 +576,20 @@ def take_sample(data_sock, start_time, previous_sample):
         Dict with every tcp_info field plus:
             "t": seconds since sending started,
             "unix_time": wall-clock timestamp, seconds since the epoch,
-            "goodput_bps": goodput since the previous sample, bits/second
-                (None for the first sample, which has no previous one).
+            "goodput_bps": goodput since the previous sample, bits/second,
+            "retrans_segs_interval": segments retransmitted since the
+                previous sample (the loss proxy, see below).
+        Both interval values are None for the first sample, which has no
+        previous one.
+
+    Loss proxy: TCP never learns for sure that a packet was lost, only
+    that it retransmitted one, so retransmissions stand in for loss. We
+    use the change in the cumulative tcpi_total_retrans counter, the same
+    way goodput uses the change in tcpi_bytes_acked, so every
+    retransmission in the interval is counted once. The other loss-related
+    fields are snapshots that would miss events between samples:
+    tcpi_retransmits resets to 0 on every new ACK, and tcpi_lost counts
+    only segments presumed lost at the moment of the sample.
     """
     info = read_tcp_info(data_sock)
     # Timestamp taken right after getsockopt so it matches the counters.
@@ -577,12 +603,16 @@ def take_sample(data_sock, start_time, previous_sample):
 
     if previous_sample is None:
         sample["goodput_bps"] = None
+        sample["retrans_segs_interval"] = None
     else:
         sample["goodput_bps"] = compute_goodput_bps(
             previous_sample["bytes_acked"],
             previous_sample["t"],
             sample["bytes_acked"],
             sample["t"],
+        )
+        sample["retrans_segs_interval"] = (
+            sample["total_retrans"] - previous_sample["total_retrans"]
         )
     return sample
 
@@ -839,13 +869,14 @@ if __name__ == "__main__":
 
     # Kernel returns a longer struct than we decode; append padding to check
     # that extra trailing bytes are ignored.
-    fake_raw = struct.pack(TCP_INFO_FORMAT, *fake_values) + bytes(40)
+    fake_raw = struct.pack(TCP_INFO_FORMAT, *fake_values) + bytes(24)
     decoded = decode_tcp_info(fake_raw)
-    assert TCP_INFO_SIZE == 168, TCP_INFO_SIZE
+    assert TCP_INFO_SIZE == 232, TCP_INFO_SIZE
     assert decoded["snd_cwnd"] == 10
     assert decoded["rtt"] == 25_000
     assert decoded["bytes_acked"] == 2**40
     assert decoded["delivery_rate"] == field_names.index("delivery_rate")
+    assert decoded["snd_wnd"] == field_names.index("snd_wnd")
 
     # Too-short buffer (old kernel) must be rejected.
     try:
