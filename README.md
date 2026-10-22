@@ -4,6 +4,9 @@ From-scratch Python iperf3 client that measures goodput and TCP statistics (`TCP
 
 Requires Linux 5.4+ (or WSL2) for experiments: `TCP_INFO` and `TCP_CONGESTION` are Linux socket options, and the decoded `struct tcp_info` prefix ends at `tcpi_snd_wnd` (added in 5.4).
 
+## AI Use Disclaimer
+Claude Code and OpenAI Codex were used for code generation and report compilation during this project. All AI-generated code and reports were reviewed and verified by human groupmembers.
+
 ## Setup
 
 ```sh
