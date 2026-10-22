@@ -22,9 +22,8 @@ Data source: results/20261021-152852 (real campaign, 10 destinations,
 The campaign ran directly on the host, not in the Docker image; see
 "Reproducing the results" for why that is equivalent.
 
-Before submitting:
-  - Replace "blob/main" in code links with "blob/<final commit hash>" so the
-    line ranges stay correct, and re-check every line range.
+Code links are pinned to commit 4b4b464 so their line ranges stay correct.
+If the code changes, re-pin them to the new commit and re-check every range.
 -->
 
 Repository: <https://github.com/ColinHermack/CS422-Project2>
@@ -33,7 +32,7 @@ Repository: <https://github.com/ColinHermack/CS422-Project2>
 
 ## 1(a) iperf3 client from scratch
 
-[`iperf3_client.py`](https://github.com/ColinHermack/CS422-Project2/blob/main/iperf3_client.py)
+[`iperf3_client.py`](https://github.com/ColinHermack/CS422-Project2/blob/4b4b464feda0abf1f810a8f043f20b75fc590f6b/iperf3_client.py)
 is a TCP client for the standard iperf3 server written with Python's
 `socket`, `struct`, and `json` modules only. It never invokes the `iperf3`
 binary and never uses a custom receiver: every test in
@@ -41,30 +40,30 @@ binary and never uses a custom receiver: every test in
 iperf3serverlist.net. We reconstructed the protocol from iperf3's source
 (`src/iperf_api.h`, `iperf_api.c`, `iperf_client_api.c`); the sequence is
 summarized in the
-[module docstring](https://github.com/ColinHermack/CS422-Project2/blob/main/iperf3_client.py#L8-L22).
+[module docstring](https://github.com/ColinHermack/CS422-Project2/blob/4b4b464feda0abf1f810a8f043f20b75fc590f6b/iperf3_client.py#L8-L22).
 
 **Wire format.** The server drives the test by sending one signed byte, a
 state code, on the control connection; the client answers some states with
 its own code. The codes are named constants copied from `iperf_api.h`
-([L42-L56](https://github.com/ColinHermack/CS422-Project2/blob/main/iperf3_client.py#L42-L56)),
+([L42-L56](https://github.com/ColinHermack/CS422-Project2/blob/4b4b464feda0abf1f810a8f043f20b75fc590f6b/iperf3_client.py#L42-L56)),
 e.g. `PARAM_EXCHANGE = 9`, `CREATE_STREAMS = 10`, `ACCESS_DENIED = -1`.
 JSON messages are framed as a 4-byte big-endian length followed by the
 UTF-8 JSON text, mirroring iperf3's `JSON_write`
-([`send_json` / `recv_json`](https://github.com/ColinHermack/CS422-Project2/blob/main/iperf3_client.py#L341-L386)).
+([`send_json` / `recv_json`](https://github.com/ColinHermack/CS422-Project2/blob/4b4b464feda0abf1f810a8f043f20b75fc590f6b/iperf3_client.py#L341-L386)).
 `recv_exact` loops until it has the requested number of bytes, since
 `recv()` may return less
-([L287-L314](https://github.com/ColinHermack/CS422-Project2/blob/main/iperf3_client.py#L287-L314)).
+([L287-L314](https://github.com/ColinHermack/CS422-Project2/blob/4b4b464feda0abf1f810a8f043f20b75fc590f6b/iperf3_client.py#L287-L314)).
 
 **Protocol steps.** One function per step, called in order by
-[`run_experiment`](https://github.com/ColinHermack/CS422-Project2/blob/main/iperf3_client.py#L763-L850):
+[`run_experiment`](https://github.com/ColinHermack/CS422-Project2/blob/4b4b464feda0abf1f810a8f043f20b75fc590f6b/iperf3_client.py#L763-L850):
 
 | Spec step | What the client does | Code |
 |---|---|---|
-| (i) Control connection | TCP connect to the server, send a 37-byte cookie (36 random characters from iperf3's alphabet plus NUL). The server uses the cookie to match the later data connection to this test. | [`connect_control`](https://github.com/ColinHermack/CS422-Project2/blob/main/iperf3_client.py#L448-L467) |
-| (ii) Parameter exchange | Wait for `PARAM_EXCHANGE`, send the test parameters as JSON (`tcp`, `time`, `parallel = 1`, `len = 131072`, ...: the keys iperf3's own `send_parameters` sends), then wait for `CREATE_STREAMS`, which means the server accepted them. | [`exchange_params`](https://github.com/ColinHermack/CS422-Project2/blob/main/iperf3_client.py#L470-L499) |
-| (iii) Data connection | Open a second TCP connection to the same IP and port, set `TCP_CONGESTION` on it **before** `connect()`, send the same cookie, and read the algorithm back with `getsockopt`. Then wait for `TEST_START` and `TEST_RUNNING`. | [`open_data_stream`](https://github.com/ColinHermack/CS422-Project2/blob/main/iperf3_client.py#L502-L551), [`wait_for_test_running`](https://github.com/ColinHermack/CS422-Project2/blob/main/iperf3_client.py#L554-L564) |
-| (iv) Timed send | Send 128 KiB blocks for `--duration` seconds on a non-blocking socket, using `select()` so sending never delays a `TCP_INFO` sample (Section 2(a)). The control socket is watched at the same time so a server abort is noticed immediately. | [`send_and_sample`](https://github.com/ColinHermack/CS422-Project2/blob/main/iperf3_client.py#L634-L698) |
-| (v) Termination | Send `TEST_END`; on `EXCHANGE_RESULTS` send our results JSON (every key the server's `get_results` requires, or it rejects the message) and read the server's; on `DISPLAY_RESULTS` send `IPERF_DONE` and close both sockets. | [`exchange_results`](https://github.com/ColinHermack/CS422-Project2/blob/main/iperf3_client.py#L701-L743), [`finish_test`](https://github.com/ColinHermack/CS422-Project2/blob/main/iperf3_client.py#L746-L756) |
+| (i) Control connection | TCP connect to the server, send a 37-byte cookie (36 random characters from iperf3's alphabet plus NUL). The server uses the cookie to match the later data connection to this test. | [`connect_control`](https://github.com/ColinHermack/CS422-Project2/blob/4b4b464feda0abf1f810a8f043f20b75fc590f6b/iperf3_client.py#L448-L467) |
+| (ii) Parameter exchange | Wait for `PARAM_EXCHANGE`, send the test parameters as JSON (`tcp`, `time`, `parallel = 1`, `len = 131072`, ...: the keys iperf3's own `send_parameters` sends), then wait for `CREATE_STREAMS`, which means the server accepted them. | [`exchange_params`](https://github.com/ColinHermack/CS422-Project2/blob/4b4b464feda0abf1f810a8f043f20b75fc590f6b/iperf3_client.py#L470-L499) |
+| (iii) Data connection | Open a second TCP connection to the same IP and port, set `TCP_CONGESTION` on it **before** `connect()`, send the same cookie, and read the algorithm back with `getsockopt`. Then wait for `TEST_START` and `TEST_RUNNING`. | [`open_data_stream`](https://github.com/ColinHermack/CS422-Project2/blob/4b4b464feda0abf1f810a8f043f20b75fc590f6b/iperf3_client.py#L502-L551), [`wait_for_test_running`](https://github.com/ColinHermack/CS422-Project2/blob/4b4b464feda0abf1f810a8f043f20b75fc590f6b/iperf3_client.py#L554-L564) |
+| (iv) Timed send | Send 128 KiB blocks for `--duration` seconds on a non-blocking socket, using `select()` so sending never delays a `TCP_INFO` sample (Section 2(a)). The control socket is watched at the same time so a server abort is noticed immediately. | [`send_and_sample`](https://github.com/ColinHermack/CS422-Project2/blob/4b4b464feda0abf1f810a8f043f20b75fc590f6b/iperf3_client.py#L634-L698) |
+| (v) Termination | Send `TEST_END`; on `EXCHANGE_RESULTS` send our results JSON (every key the server's `get_results` requires, or it rejects the message) and read the server's; on `DISPLAY_RESULTS` send `IPERF_DONE` and close both sockets. | [`exchange_results`](https://github.com/ColinHermack/CS422-Project2/blob/4b4b464feda0abf1f810a8f043f20b75fc590f6b/iperf3_client.py#L701-L743), [`finish_test`](https://github.com/ColinHermack/CS422-Project2/blob/4b4b464feda0abf1f810a8f043f20b75fc590f6b/iperf3_client.py#L746-L756) |
 
 A test counts as successful only after the full termination handshake. As
 an end-to-end check, the server's own count of bytes received (from its
@@ -80,26 +79,26 @@ reason, so the caller can log it and move on; a busy server raises the
 subclass `ServerBusyError`, because the fix is different (try another
 port). On any failure, `run_experiment` sends `CLIENT_TERMINATE` (best
 effort) so the server frees itself sooner, and closes both sockets
-([L811-L840](https://github.com/ColinHermack/CS422-Project2/blob/main/iperf3_client.py#L811-L840)).
+([L811-L840](https://github.com/ColinHermack/CS422-Project2/blob/4b4b464feda0abf1f810a8f043f20b75fc590f6b/iperf3_client.py#L811-L840)).
 
 | Failure | How it is detected | Handling | Seen in our campaign |
-|---|---|---|---|
+|-------|--------------------|---------|---------|
 | Unresponsive or overloaded server | Every socket has a 10 s timeout (`DEFAULT_TIMEOUT`); a connect or control read that exceeds it raises `TimeoutError`. | Converted to `IperfError("timed out ...")`. | 2 hosts during selection; 6 failed tries during the campaign, all succeeded on retry. |
 | Busy server (one test at a time) | Server answers `ACCESS_DENIED` (-1) instead of `PARAM_EXCHANGE`. | `ServerBusyError`; selection tries another port on the same host. | 2 hosts during selection; the one failed campaign run (below). |
 | Rejected parameter negotiation | Server sends `SERVER_ERROR` (-2) instead of `CREATE_STREAMS`, followed by its iperf3 error code and errno, which we read and log. | `IperfError` with both codes. | Not seen. |
 | Connection timeout or refusal | `connect()` times out, or raises `ConnectionRefusedError` / `ENETUNREACH` (all `OSError`). | `IperfError("socket error: ...")`. | 1 host (network unreachable). |
-| Premature termination | `recv()` returns 0 bytes (server closed), a reset raises `OSError`, or the control socket becomes readable mid-test with `SERVER_TERMINATE` ([`handle_control_message_during_test`](https://github.com/ColinHermack/CS422-Project2/blob/main/iperf3_client.py#L620-L631)). | `IperfError`. | 2 hosts during selection (closed, reset); 1 campaign try aborted mid-send, succeeded on retry. |
+| Premature termination | `recv()` returns 0 bytes (server closed), a reset raises `OSError`, or the control socket becomes readable mid-test with `SERVER_TERMINATE` ([`handle_control_message_during_test`](https://github.com/ColinHermack/CS422-Project2/blob/4b4b464feda0abf1f810a8f043f20b75fc590f6b/iperf3_client.py#L620-L631)). | `IperfError`. | 2 hosts during selection (closed, reset); 1 campaign try aborted mid-send, succeeded on retry. |
 | Malformed reply | Length prefix over 1 MiB, invalid UTF-8/JSON, JSON that is not an object, or an unknown state code. | `IperfError`; never crashes on server input. | Not seen. |
 
 ## 1(b) Destination selection
 
-[`destinations.py`](https://github.com/ColinHermack/CS422-Project2/blob/main/destinations.py)
+[`destinations.py`](https://github.com/ColinHermack/CS422-Project2/blob/4b4b464feda0abf1f810a8f043f20b75fc590f6b/destinations.py)
 reads `listed_iperf3_servers.csv` (185 servers from iperf3serverlist.net).
 The `PORT` column is a single port or an inclusive range such as
-`5201-5210`; [`parse_ports`](https://github.com/ColinHermack/CS422-Project2/blob/main/destinations.py#L45-L68)
+`5201-5210`; [`parse_ports`](https://github.com/ColinHermack/CS422-Project2/blob/4b4b464feda0abf1f810a8f043f20b75fc590f6b/destinations.py#L45-L68)
 expands ranges, since such hosts run one iperf3 server per port.
 
-[`select_destinations`](https://github.com/ColinHermack/CS422-Project2/blob/main/destinations.py#L106-L197)
+[`select_destinations`](https://github.com/ColinHermack/CS422-Project2/blob/4b4b464feda0abf1f810a8f043f20b75fc590f6b/destinations.py#L106-L197)
 shuffles the list (optionally with `--seed` for a reproducible order) and
 probes candidates with a real 10 s iperf3 test, keeping the first `n` that
 complete it. A probe is a full test, not just a TCP connect, because many
@@ -128,7 +127,7 @@ Selected destinations (address and port as tested; IP is what the hostname
 resolved to):
 
 | Host | Port | IP | Country | Provider |
-|---|---:|---|---|---|
+|------------------------------|------:|---------------|-------|-------------|
 | 156.146.40.65 | 5201 | 156.146.40.65 | SK | DATAPACKET |
 | speedtest.wdc2.us.leaseweb.net | 5205 | 23.105.9.80 | US | LeaseWeb |
 | 123.53.44.221 | 5215 | 123.53.44.221 | CN | China Telecom |
@@ -144,16 +143,16 @@ resolved to):
 later. Every algorithm must be measured over the same destinations
 (Part 3), so a failed test is retried on the *same* server rather than
 replaced: up to 3 tries, 10 s apart
-([`run_with_retries`](https://github.com/ColinHermack/CS422-Project2/blob/main/run_experiments.py#L279-L313)),
+([`run_with_retries`](https://github.com/ColinHermack/CS422-Project2/blob/4b4b464feda0abf1f810a8f043f20b75fc590f6b/run_experiments.py#L279-L313)),
 with a 3 s pause before every test because many public servers restart
 their iperf3 process after each test and refuse connections briefly
-([L43-L58](https://github.com/ColinHermack/CS422-Project2/blob/main/run_experiments.py#L43-L58)).
+([L43-L58](https://github.com/ColinHermack/CS422-Project2/blob/4b4b464feda0abf1f810a8f043f20b75fc590f6b/run_experiments.py#L43-L58)).
 Five runs needed a retry and then succeeded. One run,
 `la.speedtest.clouvider.net:5205` with bbr in repetition 2, got
 `ACCESS_DENIED` on all 3 tries and is recorded as failed, so 89 of 90 runs
 have data. A destination where *every* run failed would count as a
 shortfall after selection (`destinations_without_data`,
-[L435-L461](https://github.com/ColinHermack/CS422-Project2/blob/main/run_experiments.py#L435-L461));
+[L435-L461](https://github.com/ColinHermack/CS422-Project2/blob/4b4b464feda0abf1f810a8f043f20b75fc590f6b/run_experiments.py#L435-L461));
 there were none.
 
 ## 1(c) Goodput
@@ -162,8 +161,8 @@ Every `--interval` seconds (1 s in our campaign), the client reads
 `TCP_INFO` from the **data** socket with `getsockopt` and computes goodput
 from the change in the cumulative acknowledged-byte counter
 `tcpi_bytes_acked` over the measured time between samples
-([`compute_goodput_bps`](https://github.com/ColinHermack/CS422-Project2/blob/main/iperf3_client.py#L243-L264),
-called from [`take_sample`](https://github.com/ColinHermack/CS422-Project2/blob/main/iperf3_client.py#L567-L617)):
+([`compute_goodput_bps`](https://github.com/ColinHermack/CS422-Project2/blob/4b4b464feda0abf1f810a8f043f20b75fc590f6b/iperf3_client.py#L243-L264),
+called from [`take_sample`](https://github.com/ColinHermack/CS422-Project2/blob/4b4b464feda0abf1f810a8f043f20b75fc590f6b/iperf3_client.py#L567-L617)):
 
 $$\text{goodput}_i = \frac{\texttt{bytes\_acked}_i - \texttt{bytes\_acked}_{i-1}}{t_i - t_{i-1}} \cdot 8 \quad \text{[bits/s]}$$
 
@@ -177,19 +176,19 @@ not inflate goodput. Section 2(a) describes the sampling loop and the
 ![Goodput over time, one panel per destination (shared axes). Each line is one run; color is the algorithm, so the three repetitions of an algorithm share a color. Generated by `report.plot_goodput_over_time`.](results/20261021-152852/goodput_over_time.pdf)
 
 Generated by
-[`plot_goodput_over_time`](https://github.com/ColinHermack/CS422-Project2/blob/main/report.py#L291-L367).
+[`plot_goodput_over_time`](https://github.com/ColinHermack/CS422-Project2/blob/4b4b464feda0abf1f810a8f043f20b75fc590f6b/report.py#L291-L367).
 All panels share the same axes so destinations can be compared directly.
 
 The summary table of minimum, median, mean, and 95th-percentile goodput for
 each destination and algorithm is in Section 3(a), and also saved as
 `results/20261021-152852/goodput_summary.csv`. It is computed by
-[`summarize_goodput`](https://github.com/ColinHermack/CS422-Project2/blob/main/report.py#L155-L190),
+[`summarize_goodput`](https://github.com/ColinHermack/CS422-Project2/blob/4b4b464feda0abf1f810a8f043f20b75fc590f6b/report.py#L155-L190),
 which pools the 1 s samples of all repetitions of a destination and
 algorithm (180 samples for 3 runs of 60 s). The 95th percentile uses
 `statistics.quantiles(values, n=100, method="inclusive")[94]`, i.e. linear
 interpolation between the closest ranks, treating the samples as the whole
 population so the result always lies between min and max
-([`percentile_95`](https://github.com/ColinHermack/CS422-Project2/blob/main/report.py#L130-L152)).
+([`percentile_95`](https://github.com/ColinHermack/CS422-Project2/blob/4b4b464feda0abf1f810a8f043f20b75fc590f6b/report.py#L130-L152)).
 
 # 2. TCP Stats Tracing During Transfer
 
@@ -207,18 +206,22 @@ destination, every algorithm back to back).
 
 **Source socket.** Statistics come from the data socket, the TCP connection
 that carries the test payload, never from the iperf3 control socket.
-[`take_sample`](https://github.com/ColinHermack/CS422-Project2/blob/main/iperf3_client.py#L567-L617)
+[`take_sample`](https://github.com/ColinHermack/CS422-Project2/blob/4b4b464feda0abf1f810a8f043f20b75fc590f6b/iperf3_client.py#L567-L617)
 calls
-[`read_tcp_info`](https://github.com/ColinHermack/CS422-Project2/blob/main/iperf3_client.py#L230-L240),
+[`read_tcp_info`](https://github.com/ColinHermack/CS422-Project2/blob/4b4b464feda0abf1f810a8f043f20b75fc590f6b/iperf3_client.py#L230-L240),
 which runs `getsockopt(IPPROTO_TCP, TCP_INFO)` on the data socket and decodes
 the returned `struct tcp_info` with
-[`decode_tcp_info`](https://github.com/ColinHermack/CS422-Project2/blob/main/iperf3_client.py#L200-L227).
+[`decode_tcp_info`](https://github.com/ColinHermack/CS422-Project2/blob/4b4b464feda0abf1f810a8f043f20b75fc590f6b/iperf3_client.py#L200-L227).
 
-**Host kernel.** From `results/20261021-152852/metadata.json`:
-`host_kernel` (`uname -r`) is `6.18.54.1-microsoft-standard-WSL2`,
-`host_platform` is
-`Linux-6.18.54.1-microsoft-standard-WSL2-x86_64-with-glibc2.35`. The
-kernel's default congestion control is `cubic`, with `reno`, `cubic`, and
+**Host kernel.** From `results/20261021-152852/metadata.json`
+(`host_kernel` is `uname -r`):
+
+```
+host_kernel   = 6.18.54.1-microsoft-standard-WSL2
+host_platform = Linux-6.18.54.1-microsoft-standard-WSL2-x86_64-with-glibc2.35
+```
+
+The kernel's default congestion control is `cubic`, with `reno`, `cubic`, and
 `bbr` all available (`kernel_tcp_settings`). The kernel-reported
 `struct tcp_info` length is 280 bytes (`tcpi_kernel_size_bytes`); we decode
 the first 232 bytes as described below.
@@ -238,7 +241,7 @@ kernel struct because every field is already naturally aligned (each
 fields after `tcpi_snd_wnd`, so we request a 256-byte buffer and decode only
 the 232-byte prefix; a kernel that returns fewer than 232 bytes is rejected.
 The field list, format codes, and units live in one table in the code,
-[`TCP_INFO_FIELDS`](https://github.com/ColinHermack/CS422-Project2/blob/main/iperf3_client.py#L115-L172),
+[`TCP_INFO_FIELDS`](https://github.com/ColinHermack/CS422-Project2/blob/4b4b464feda0abf1f810a8f043f20b75fc590f6b/iperf3_client.py#L115-L172),
 so the decoder and the units saved in `metadata.json` cannot drift apart.
 
 | Offset (bytes) | Field | C type | struct code | Unit |
@@ -303,7 +306,7 @@ so the decoder and the units saved in `metadata.json` cannot drift apart.
 `tcpi_delivery_rate_app_limited:1` and `tcpi_fastopen_client_fail:2`.
 
 **Sampling and interval measurements.** While sending,
-[`send_and_sample`](https://github.com/ColinHermack/CS422-Project2/blob/main/iperf3_client.py#L634-L698)
+[`send_and_sample`](https://github.com/ColinHermack/CS422-Project2/blob/4b4b464feda0abf1f810a8f043f20b75fc590f6b/iperf3_client.py#L634-L698)
 uses `select()` with a timeout so that sending never blocks past the next
 sample deadline. Sample *k* is due at `start + k * interval` (computed from
 *k*, so lateness does not accumulate), with a baseline sample at *t* = 0 and
@@ -340,9 +343,9 @@ selected destinations, and each run's outcome.
 ## 2(b) Visualization
 
 The plots are generated automatically at the end of every campaign
-([`plot_tcp_stats`](https://github.com/ColinHermack/CS422-Project2/blob/main/report.py#L615-L656)).
+([`plot_tcp_stats`](https://github.com/ColinHermack/CS422-Project2/blob/4b4b464feda0abf1f810a8f043f20b75fc590f6b/report.py#L615-L656)).
 The representative destination, `speed1.fiberby.dk:9213`, is picked by
-[`choose_representative_destination`](https://github.com/ColinHermack/CS422-Project2/blob/main/report.py#L391-L450):
+[`choose_representative_destination`](https://github.com/ColinHermack/CS422-Project2/blob/4b4b464feda0abf1f810a8f043f20b75fc590f6b/report.py#L391-L450):
 among the destinations with data for every algorithm and no failed
 repetition, the one whose mean goodput is the median, so the plots show a
 typical path rather than the fastest or slowest. Each repetition is one
@@ -351,14 +354,14 @@ line (time series) or one color (scatter).
 ![TCP stats over time (CUBIC). From top: congestion window, smoothed RTT (dashed: minimum RTT), retransmitted segments per interval, goodput. Generated by `report.plot_time_series`.](results/20261021-152852/tcp_timeseries_cubic.pdf)
 
 Generated by
-[`plot_time_series`](https://github.com/ColinHermack/CS422-Project2/blob/main/report.py#L510-L568).
+[`plot_time_series`](https://github.com/ColinHermack/CS422-Project2/blob/4b4b464feda0abf1f810a8f043f20b75fc590f6b/report.py#L510-L568).
 cwnd and RTT are snapshots at each sample time, drawn as lines;
 retransmissions and goodput describe a whole interval, drawn as steps.
 
 ![Congestion window, smoothed RTT, and retransmissions against goodput (CUBIC). Generated by `report.plot_scatter`.](results/20261021-152852/tcp_scatter_cubic.pdf)
 
 Generated by
-[`plot_scatter`](https://github.com/ColinHermack/CS422-Project2/blob/main/report.py#L571-L612).
+[`plot_scatter`](https://github.com/ColinHermack/CS422-Project2/blob/4b4b464feda0abf1f810a8f043f20b75fc590f6b/report.py#L571-L612).
 Each point is one sample. Goodput is the average over the interval ending
 at the sample, while cwnd and RTT are snapshots at its end, so a point
 taken right after a sudden change pairs the new cwnd with the previous
@@ -492,7 +495,7 @@ under 5 Mbit/s on paths where another repetition of cubic, minutes earlier
 or later, averages 80 to 160 Mbit/s:
 
 | Destination | Repetition | Mean goodput (Mbit/s) | Retransmitted segments | Other cubic repetitions (Mbit/s) |
-|---|---:|---:|---:|---|
+|---------------------------|-----------:|-----------:|-----------:|-------------|
 | `189.25.101.151` | 1 | 2.8 | 3.7% | 4.8, 99.4 |
 | `189.25.101.151` | 2 | 4.8 | 2.1% | 2.8, 99.4 |
 | `iperf.pendc.com` | 2 | 1.3 | 2.1% | 134.8, 93.6 |
@@ -542,16 +545,17 @@ algorithms back to back within each repetition (test order: for each
 repetition, for each destination, every algorithm). The algorithm is set on
 the data socket before `connect()` and the actually-applied algorithm read
 back afterward, both in
-[`open_data_stream`](https://github.com/ColinHermack/CS422-Project2/blob/main/iperf3_client.py#L502-L551)
+[`open_data_stream`](https://github.com/ColinHermack/CS422-Project2/blob/4b4b464feda0abf1f810a8f043f20b75fc590f6b/iperf3_client.py#L502-L551)
 (`setsockopt(IPPROTO_TCP, TCP_CONGESTION, ...)` before connecting, then a
 matching `getsockopt` readback). The kernel-reported algorithm actually used
-(`algorithm_used` in `samples.csv`) matched the requested one on every run
-except where noted below. Host kernel: `6.18.54.1-microsoft-standard-WSL2`
+(`algorithm_used` in `samples.csv`) matched the requested one on every
+completed run. Host kernel: `6.18.54.1-microsoft-standard-WSL2`
 (the stock WSL2 kernel ships `tcp_bbr.ko`, loadable without root, once WSL
-is updated past the 5.15 line — see "Reproducing the results").
+is updated past the 5.15 line; see "Reproducing the results").
 
 Out of 90 scheduled runs (10 destinations x 3 algorithms x 3 repetitions),
-89 completed; `la.speedtest.clouvider.net:5205` (bbr, repetition 2) failed
+89 completed. The bbr run on `la.speedtest.clouvider.net` (port 5205,
+repetition 2) failed
 all 3 retry attempts with the server rejecting parameter exchange
 (`server busy / ACCESS_DENIED`) and was skipped, per the bounded-retry
 robustness requirement. No destination is missing data entirely
@@ -572,7 +576,7 @@ robustness requirement. No destination is missing data entirely
 `results/20261021-152852/goodput_summary.csv`:**
 
 | host | port | algorithm | samples | min | median | mean | p95 |
-|---|---:|---|---:|---:|---:|---:|---:|
+|------------------------------|-----:|---------|-------:|-------:|--------:|-------:|-------:|
 | 123.53.44.221 | 5215 | bbr | 180 | 0.51 | 27.38 | 38.61 | 81.51 |
 | 123.53.44.221 | 5215 | cubic | 180 | 0.63 | 83.17 | 80.31 | 88.10 |
 | 123.53.44.221 | 5215 | reno | 180 | 1.22 | 89.11 | 85.88 | 91.96 |
@@ -616,7 +620,7 @@ retransmitted segments over all data segments sent (our loss proxy).
 Computed from `samples.csv` (all destinations, all repetitions pooled).
 
 | Algorithm | Runs | Median goodput | Mean goodput | Worst run (mean) | Runs under 10 Mbit/s | Median srtt / min RTT | p95 srtt / min RTT | Retransmitted |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|
+|---------|-----:|--------:|--------:|--------:|--------:|--------:|--------:|-------------:|
 | cubic | 30 | 92.1 | 96.1 | 0.6 | 6 | 1.09 | 3.07 | 0.029% |
 | reno | 30 | 88.7 | 83.5 | 0.5 | 5 | 1.09 | 3.17 | 0.039% |
 | bbr | 29 | 119.3 | 117.5 | 20.4 | 0 | 1.11 | 3.09 | 0.126% |
@@ -630,7 +634,7 @@ client can deliver on that path given the ~2.8 MB in-flight limit set by
 our send buffer (Section 2(c), finding 1): $2.8 \text{ MB} \cdot 8 / \text{min RTT}$.
 
 | Destination | min RTT (ms) | Ceiling (Mbit/s) | cubic | reno | bbr |
-|---|---:|---:|---|---|---|
+|------------------------------------------|--------:|---------:|-----------------|-----------------|-----------------|
 | `speedtest.wdc2.us.leaseweb.net` | 26 | 877 | 191 / 65 / 0.03% / 0.04 | 182 / 66 / 0.04% / 0.67 | **194 / 51 / 0.02% / 0.04** |
 | `la.speedtest.clouvider.net` | 55 | 409 | **146 / 114 / 0.02% / 0.29** | 118 / 106 / 0.02% / 0.29 | 130 / 133 / 0.01% / 0.24 |
 | `speedtest6.cwpanama.net` | 67 | 334 | **162 / 96 / 0.01% / 0.24** | 99 / 78 / 0.04% / 0.69 | 136 / 138 / 0.00% / 0.16 |
@@ -1051,7 +1055,7 @@ a visible queue, until `bw_max` decays.
 `6.18.54.1-microsoft-standard-WSL2` (WSL2, Ubuntu 22.04 userspace), with
 `reno`, `cubic`, and `bbr` all available
 (`net.ipv4.tcp_available_congestion_control`). On this host `bbr` needed no
-`sudo modprobe tcp_bbr` — it loads automatically once WSL itself is updated
+`sudo modprobe tcp_bbr`: it loads automatically once WSL itself is updated
 past the kernel's 5.15 line (`wsl --update` from an elevated Windows
 terminal, then `wsl --shutdown` to actually restart the VM onto the new
 kernel). On a from-scratch Linux host, `sudo modprobe tcp_bbr` is the
@@ -1066,7 +1070,7 @@ expected step the README documents.
 ```
 
 **Docker.** The repository's
-[`Dockerfile`](https://github.com/ColinHermack/CS422-Project2/blob/main/Dockerfile)
+[`Dockerfile`](https://github.com/ColinHermack/CS422-Project2/blob/4b4b464feda0abf1f810a8f043f20b75fc590f6b/Dockerfile)
 (`FROM ubuntu:24.04`) packages the full pipeline: its default command runs
 the same campaign as above, from destination selection through the
 summary table and plots. To run it on a Linux or WSL2 host:
