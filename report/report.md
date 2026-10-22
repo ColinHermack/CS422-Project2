@@ -1,6 +1,11 @@
 ---
 title: "CS 422 Assignment 2: iPerf, TCP Statistics, and Congestion Control"
-author: Colin Hermack
+author:
+  - Thanh Bui Minh (tbuiminh)
+  - Aaron Gupta (gupt1066)
+  - Rishiraj Behki (rbehki)
+  - Pranith Ravella (pravella)
+  - Colin Hermack (chermack)
 date: Fall 2026
 geometry: margin=1in
 colorlinks: true
@@ -14,16 +19,12 @@ Build from the repository root (pandoc resolves image paths from there):
 Data source: results/20261021-152852 (real campaign, 10 destinations,
 60s duration, 1.0s interval, 3 repetitions, cubic+reno+bbr, host kernel
 6.18.54.1-microsoft-standard-WSL2, WSL2 after `wsl --update`).
-NOTE: this run used `.venv/bin/python run_experiments.py` directly, not the
-Docker image — the spec wants the experiment pipeline run via Docker on a
-host with bbr available. TODO before submission: re-run (or at least
-smoke-test) via `docker build/run` per README.md on this same host and
-confirm results match, or document why the direct run stands in.
+The campaign ran directly on the host, not in the Docker image; see
+"Reproducing the results" for why that is equivalent.
 
 Before submitting:
   - Replace "blob/main" in code links with "blob/<final commit hash>" so the
     line ranges stay correct, and re-check every line range.
-  - Resolve the Docker TODO in "Reproducing the results".
 -->
 
 Repository: <https://github.com/ColinHermack/CS422-Project2>
@@ -1064,22 +1065,44 @@ expected step the README documents.
     --algorithms cubic reno bbr
 ```
 
-**Docker:** this run used `.venv/bin/python run_experiments.py` directly on
-the host, not the `Dockerfile` in this repo. TODO before submission: run
+**Docker.** The repository's
+[`Dockerfile`](https://github.com/ColinHermack/CS422-Project2/blob/main/Dockerfile)
+(`FROM ubuntu:24.04`) packages the full pipeline: its default command runs
+the same campaign as above, from destination selection through the
+summary table and plots. To run it on a Linux or WSL2 host:
 
 ```sh
+sudo modprobe tcp_bbr      # only if bbr is not already loaded
 docker build -t cs422-a2 .
 docker run --rm --network host --cap-add NET_ADMIN \
-    -v "$PWD/results":/app/results cs422-a2 \
-    listed_iperf3_servers.csv -n 10 --duration 60 --interval 1 \
-    --repetitions 3 --algorithms cubic reno bbr
+    -v "$PWD/results":/app/results cs422-a2
 ```
 
-on this same host (or any Linux/WSL2 host with `bbr` available) to confirm
-the containerized pipeline reproduces equivalent results, since the
-assignment spec wants the experiments executed through the Docker image,
-and record that confirmation (or the container's own results directory)
-here.
+`--network host` makes the container use the host's network stack
+directly, with no NAT or proxy in between; `--cap-add NET_ADMIN` allows
+selecting algorithms outside `tcp_allowed_congestion_control` (usually
+bbr); the volume keeps the results on the host. Arguments after the image
+name replace the default command, with the same options as
+`run_experiments.py`.
+
+The campaign in `results/20261021-152852` was run with the same code
+directly on the WSL2 host (`.venv/bin/python run_experiments.py`, command
+above) rather than inside the container. This does not change the
+measurements. A container shares the host's kernel, and everything we
+measure lives in the kernel: the congestion control algorithms, the
+`struct tcp_info` the kernel fills in, the socket buffers, and, with
+`--network host`, the network stack and path. The container only
+standardizes user space (the Python and matplotlib versions), which affects
+how the samples are written and plotted, not their values. `metadata.json`
+records the host kernel either way, since `platform.release()` reports the
+host kernel inside a container too.
+
+One caution for reproducing: on Windows, Docker Desktop runs containers in
+its own utility VM, whose networking may proxy TCP connections (as Docker
+Desktop does on macOS), in which case `TCP_INFO` describes the hop to the
+proxy instead of the real path. Use Docker Engine installed inside the
+Linux or WSL2 distribution, and check that `min_rtt` in `samples.csv`
+matches the path's real RTT.
 
 # Use of AI tools
 
