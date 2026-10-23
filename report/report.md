@@ -2,7 +2,7 @@
 title: "CS 422 Assignment 2: iPerf, TCP Statistics, and Congestion Control"
 author:
   - Thanh Bui Minh (tbuiminh)
-  - Aaron Gupta (gupt1066)
+  - Aaruni Gupta (gupt1066)
   - Rishiraj Behki (rbehki)
   - Pranith Ravella (pravella)
   - Colin Hermack (chermack)
@@ -36,6 +36,21 @@ report. All code, results, interpretations, and design choices were reviewed
 and verified by the group. We understand the submitted work and are prepared
 to explain the implementation, measurements, and congestion-control design
 during evaluation.
+
+## Code reference index
+
+The links below go directly to the relevant implementation in the pinned
+commit used for this report. More specific function-level links also appear
+throughout the corresponding sections.
+
+| Report requirement | Relevant code |
+|---|---|
+| iperf3 protocol and complete client transaction | [`run_experiment` and its protocol steps](https://github.com/ColinHermack/CS422-Project2/blob/a03d4db529f0f966b5a680160b326e36ae873d50/iperf3_client.py#L763-L850) |
+| Random server selection and live usability probes | [`select_destinations`](https://github.com/ColinHermack/CS422-Project2/blob/a03d4db529f0f966b5a680160b326e36ae873d50/destinations.py#L106-L197) |
+| `TCP_INFO` decoding and goodput calculation | [`decode_tcp_info` / `compute_goodput_bps`](https://github.com/ColinHermack/CS422-Project2/blob/a03d4db529f0f966b5a680160b326e36ae873d50/iperf3_client.py#L200-L264), [`take_sample`](https://github.com/ColinHermack/CS422-Project2/blob/a03d4db529f0f966b5a680160b326e36ae873d50/iperf3_client.py#L567-L617) |
+| Command-line options and single-entry-point pipeline | [`parse_args`](https://github.com/ColinHermack/CS422-Project2/blob/a03d4db529f0f966b5a680160b326e36ae873d50/run_experiments.py#L264-L335), [`main`](https://github.com/ColinHermack/CS422-Project2/blob/a03d4db529f0f966b5a680160b326e36ae873d50/run_experiments.py#L655-L723) |
+| Summary tables and PDF plot generation | [`generate_report`](https://github.com/ColinHermack/CS422-Project2/blob/a03d4db529f0f966b5a680160b326e36ae873d50/report.py#L659-L692) |
+| Ubuntu 24.04 container and automated Linux/WSL2 launcher | [`Dockerfile`](https://github.com/ColinHermack/CS422-Project2/blob/a03d4db529f0f966b5a680160b326e36ae873d50/Dockerfile#L30-L55), [`run_wsl_docker.sh`](https://github.com/ColinHermack/CS422-Project2/blob/a03d4db529f0f966b5a680160b326e36ae873d50/run_wsl_docker.sh#L53-L130) |
 
 # 1. iPerf Throughput Application
 
