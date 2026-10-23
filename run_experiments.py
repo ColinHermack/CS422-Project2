@@ -29,13 +29,14 @@ import json
 import logging
 import os
 import platform
+import shutil
 import socket
+import subprocess
 import sys
 import time
 
 import destinations
 import iperf3_client
-import report
 
 
 logger = logging.getLogger("run_experiments")
@@ -61,9 +62,22 @@ PAUSE_BETWEEN_RUNS_SECONDS = 3
 DEFAULT_DESTINATIONS = 10
 DEFAULT_DURATION_SECONDS = 60
 DEFAULT_INTERVAL_SECONDS = 1.0
-DEFAULT_REPETITIONS = 1
+DEFAULT_REPETITIONS = 3
 DEFAULT_ALGORITHMS = ["cubic", "reno", "bbr"]
 DEFAULT_RESULTS_ROOT = "results"
+
+# Resolve bundled inputs relative to this file instead of the current
+# working directory. This lets `python3 /path/to/run_experiments.py` work
+# without requiring the caller to first cd into the repository.
+PROJECT_DIRECTORY = os.path.dirname(os.path.abspath(__file__))
+DEFAULT_SERVER_LIST = os.path.join(PROJECT_DIRECTORY, "listed_iperf3_servers.csv")
+REQUIREMENTS_FILE = os.path.join(PROJECT_DIRECTORY, "requirements.txt")
+DEFAULT_VENV_DIRECTORY = os.path.join(PROJECT_DIRECTORY, ".venv")
+
+# Internal flag used across os.execve() to prevent an infinite bootstrap
+# loop if dependency installation completed but matplotlib still cannot be
+# imported. Users do not need to set this.
+DEPENDENCY_BOOTSTRAP_ENV = "CS422_DEPENDENCIES_BOOTSTRAPPED"
 
 METADATA_FILE = "metadata.json"
 
@@ -118,6 +132,135 @@ def measurement_units():
     return units
 
 
+def load_report_module():
+    """Import the plotting module, installing its dependency if necessary.
+
+    The measurement client itself uses only Python's standard library, but
+    report.py needs matplotlib. On a clean WSL/Ubuntu installation,
+    `python3 run_experiments.py` previously failed immediately because that
+    package was not installed. If matplotlib is missing, this function:
+
+      1. creates the repository's ignored `.venv` environment,
+      2. installs requirements.txt into it, and
+      3. re-executes this script with that environment's Python.
+
+    The optional CS422_VENV_DIR environment variable changes the venv path;
+    it is mainly useful for isolated testing.
+
+    Returns:
+        The imported local report module. On the bootstrap path this
+        function replaces the current process and does not return.
+
+    Raises:
+        ModuleNotFoundError: an import other than matplotlib is missing.
+        SystemExit: the virtual environment or dependency installation
+            failed, or matplotlib is still unavailable after bootstrapping.
+    """
+    try:
+        import report
+        return report
+    except ModuleNotFoundError as error:
+        if error.name != "matplotlib":
+            raise
+
+    if os.environ.get(DEPENDENCY_BOOTSTRAP_ENV) == "1":
+        sys.exit(
+            "error: matplotlib is still unavailable after installing requirements.txt"
+        )
+
+    venv_directory = os.environ.get("CS422_VENV_DIR", DEFAULT_VENV_DIRECTORY)
+    if os.name == "nt":
+        venv_python = os.path.join(venv_directory, "Scripts", "python.exe")
+    else:
+        venv_python = os.path.join(venv_directory, "bin", "python")
+
+    try:
+        dependencies_installed = False
+        if not os.path.exists(venv_python):
+            logger.info("creating Python environment at %s", venv_directory)
+            subprocess.run(
+                [sys.executable, "-m", "venv", venv_directory],
+                check=True,
+            )
+        else:
+            # Avoid contacting the package index on every direct run once
+            # the managed environment is ready.
+            dependency_check = subprocess.run(
+                [venv_python, "-c", "import matplotlib"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            dependencies_installed = dependency_check.returncode == 0
+
+        if not dependencies_installed:
+            logger.info("installing plotting dependencies from %s", REQUIREMENTS_FILE)
+            subprocess.run(
+                [venv_python, "-m", "pip", "install", "--disable-pip-version-check",
+                 "-r", REQUIREMENTS_FILE],
+                check=True,
+            )
+    except (OSError, subprocess.CalledProcessError) as error:
+        sys.exit(
+            "error: could not install Python dependencies automatically: "
+            f"{error}. On Ubuntu, install python3-venv and try again."
+        )
+
+    environment = os.environ.copy()
+    environment[DEPENDENCY_BOOTSTRAP_ENV] = "1"
+    script_path = os.path.abspath(__file__)
+    os.execve(
+        venv_python,
+        [venv_python, script_path, *sys.argv[1:]],
+        environment,
+    )
+
+
+def load_bbr_if_needed(algorithms):
+    """Load Linux's tcp_bbr module when BBR was requested but is absent.
+
+    WSL2 normally includes tcp_bbr as a loadable module, but does not load it
+    until requested. A direct interactive run uses sudo when necessary. In a
+    non-interactive process sudo is invoked with -n so automation fails fast
+    instead of waiting forever for a password. Docker cannot load a host
+    module itself; run_wsl_docker.sh performs this step before starting the
+    container.
+
+    Args:
+        algorithms: requested congestion-control algorithm names.
+
+    Returns:
+        None. Failure is intentionally non-fatal here; the normal algorithm
+        availability check that follows prints the definitive error.
+    """
+    if "bbr" not in algorithms:
+        return
+
+    available_path = "/proc/sys/net/ipv4/tcp_available_congestion_control"
+    try:
+        with open(available_path, encoding="ascii") as available_file:
+            if "bbr" in available_file.read().split():
+                return
+    except OSError:
+        return
+
+    modprobe = shutil.which("modprobe")
+    if modprobe is None:
+        return
+
+    if os.geteuid() == 0:
+        command = [modprobe, "tcp_bbr"]
+    elif sys.stdin.isatty():
+        command = ["sudo", modprobe, "tcp_bbr"]
+    else:
+        command = ["sudo", "-n", modprobe, "tcp_bbr"]
+
+    logger.info("BBR is not loaded; running: %s", " ".join(command))
+    try:
+        subprocess.run(command, check=True)
+    except (OSError, subprocess.CalledProcessError) as error:
+        logger.warning("could not load tcp_bbr automatically: %s", error)
+
+
 def parse_args():
     """Parse and validate the command line.
 
@@ -132,8 +275,8 @@ def parse_args():
                     "goodput summaries and plots.",
     )
     parser.add_argument(
-        "server_list", nargs="?",
-        help="CSV server list (IP/HOST,PORT,... as on iperf3serverlist.net)",
+        "server_list", nargs="?", default=DEFAULT_SERVER_LIST,
+        help="CSV server list (default: the bundled listed_iperf3_servers.csv)",
     )
     parser.add_argument(
         "-n", "--destinations", type=int, default=DEFAULT_DESTINATIONS,
@@ -172,11 +315,13 @@ def parse_args():
         "--report-only", metavar="RESULTS_DIR",
         help="skip the experiments; rebuild the summary and plots from an existing results directory",
     )
+    parser.add_argument(
+        "--check-environment", action="store_true",
+        help="check dependencies, Linux TCP support, and requested algorithms, then exit",
+    )
     args = parser.parse_args()
 
     # Bad values would otherwise surface much later as confusing errors.
-    if args.report_only is None and args.server_list is None:
-        parser.error("server_list is required unless --report-only is given")
     if args.destinations < 1:
         parser.error("--destinations must be at least 1")
     if args.duration < 1:
@@ -511,15 +656,17 @@ def main():
     """Run the whole pipeline (see the module docstring)."""
     args = parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    report_module = load_report_module()
 
     if args.report_only is not None:
-        report.generate_report(args.report_only, args.representative)
+        report_module.generate_report(args.report_only, args.representative)
         return
 
     # TCP_CONGESTION only exists in Python's socket module on Linux.
     if not hasattr(socket, "TCP_CONGESTION"):
         sys.exit("error: this script needs Linux (TCP_INFO and TCP_CONGESTION)")
 
+    load_bbr_if_needed(args.algorithms)
     unavailable = find_unavailable_algorithms(args.algorithms)
     if unavailable:
         sys.exit(
@@ -529,11 +676,20 @@ def main():
         )
 
     kernel_settings = read_kernel_tcp_settings()
+    if args.check_environment:
+        print(json.dumps({
+            "status": "ok",
+            "python": sys.executable,
+            "host_kernel": platform.release(),
+            "requested_algorithms": args.algorithms,
+            "kernel_tcp_settings": kernel_settings,
+        }, indent=2))
+        return
 
     output_dir = args.output
     if output_dir is None:
         output_dir = os.path.join(DEFAULT_RESULTS_ROOT, time.strftime("%Y%m%d-%H%M%S"))
-    samples_path = os.path.join(output_dir, report.SAMPLES_FILE)
+    samples_path = os.path.join(output_dir, report_module.SAMPLES_FILE)
     # Never overwrite the measurements of an earlier campaign.
     if os.path.exists(samples_path):
         sys.exit(f"error: {samples_path} already exists; choose another --output")
@@ -564,7 +720,7 @@ def main():
         logger.warning("shortfall: only %d of %d requested destinations produced data",
                        effective_destinations, args.destinations)
 
-    report.generate_report(output_dir, args.representative)
+    report_module.generate_report(output_dir, args.representative)
 
 
 if __name__ == "__main__":

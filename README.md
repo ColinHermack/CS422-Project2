@@ -9,50 +9,71 @@ Claude Code and OpenAI Codex were used for code generation and report compilatio
 
 ## Setup
 
+No manual Python setup is required. If a plotting dependency is missing,
+`run_experiments.py` creates `.venv`, installs `requirements.txt`, and
+restarts itself with that environment. To prepare the environment without
+starting a campaign:
+
 ```sh
-python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+python3 run_experiments.py --check-environment --algorithms cubic reno
 ```
 
 ## Run
 
 ```sh
-.venv/bin/python run_experiments.py listed_iperf3_servers.csv \
-    -n 10 --duration 60 --interval 1 --repetitions 3 --algorithms cubic reno bbr
+python3 run_experiments.py
 ```
+
+With no arguments this uses the bundled server list and runs the complete
+campaign: 10 destinations, 60 seconds, a 1-second sample interval, three
+repetitions, and `cubic reno bbr`. Options can override any default:
 
 | Option | Default | Meaning |
 |---|---|---|
-| `server_list` | | CSV server list (`IP/HOST,PORT,...`, from iperf3serverlist.net) |
+| `server_list` | bundled list | CSV server list (`IP/HOST,PORT,...`, from iperf3serverlist.net) |
 | `-n`, `--destinations` | 10 | number of destination servers |
 | `--duration` | 60 | seconds of sending per test |
 | `--interval` | 1.0 | seconds between `TCP_INFO` samples |
-| `--repetitions` | 1 | tests per destination per algorithm |
+| `--repetitions` | 3 | tests per destination per algorithm |
 | `--algorithms` | `cubic reno bbr` | congestion control algorithms to test |
 | `--output` | `results/<YYYYmmdd-HHMMSS>` | results directory |
 | `--seed` | random | seed for destination selection order |
 | `--representative HOST:PORT` | automatic | destination for the TCP stats plots (default: the destination with data for every algorithm whose mean goodput is the median) |
 | `--report-only DIR` | | rebuild summary and plots from an existing results directory |
+| `--check-environment` | | install/check dependencies and TCP algorithms, then exit |
 
 Test order: for each repetition, for each destination, every algorithm back to back.
 
-`bbr` usually needs `sudo modprobe tcp_bbr` first; the script exits early if an algorithm can't be set.
+When run directly on Linux/WSL2, the script attempts to load `tcp_bbr`
+automatically when BBR is requested. It may ask for the user's sudo password.
 
 ## Docker
 
-Runs the full pipeline in `ubuntu:24.04`. The container uses the host's kernel, so run it on a Linux host (Ubuntu 22.04+) or WSL2, not Docker Desktop on macOS (its network proxy makes `TCP_INFO` describe the hop to the proxy, and its kernel has no bbr).
+Runs the full pipeline in `ubuntu:24.04`. The container uses the host's kernel,
+so the automated launcher first loads BBR on the WSL2/Linux host, builds the
+image, verifies all three algorithms inside the container, and starts the
+campaign:
 
 ```sh
-sudo modprobe tcp_bbr      # containers cannot load kernel modules
-docker build -t cs422-a2 .
-docker run --rm --network host --cap-add NET_ADMIN \
-    -v "$PWD/results":/app/results cs422-a2
+./run_wsl_docker.sh
 ```
 
-- `--network host`: sockets use the host's network stack directly, with no NAT layer.
+The launcher may request the sudo password once to load `tcp_bbr`. Pass normal
+experiment arguments after the script to replace the Docker defaults, for
+example `./run_wsl_docker.sh -n 2 --duration 5 --repetitions 1`.
+Graded measurements require Docker Engine installed directly inside the WSL2
+distribution (or native Linux). The launcher rejects experiment runs when it
+detects Docker Desktop because Desktop proxies outbound TCP even with host
+networking; in that environment, `TCP_INFO` describes the local proxy instead
+of the public-server path. `--check-environment` remains available under Docker
+Desktop for dependency and algorithm checks, but it does not validate the
+measurement path.
+
+- `--network host`: with native Docker Engine, sockets use the host's network stack directly, with no NAT layer.
 - `--cap-add NET_ADMIN`: needed to select algorithms outside `net.ipv4.tcp_allowed_congestion_control` (usually bbr).
 - `-v ...`: keeps the results on the host.
 
-With no arguments the image runs `-n 10 --duration 60 --interval 1 --repetitions 3 --algorithms cubic reno bbr`; arguments after the image name replace that (same options as above). Record `uname -r` and `sysctl net.ipv4.tcp_available_congestion_control` for the report (the kernel version is also saved in `metadata.json`).
+With no arguments the image runs `-n 10 --duration 60 --interval 1 --repetitions 3 --algorithms cubic reno bbr`; arguments after the launcher replace that (same options as above). The kernel version and congestion-control configuration are saved in `metadata.json` automatically.
 
 ## Output (in the results directory)
 

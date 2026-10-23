@@ -8,21 +8,21 @@
 # metadata.json records the host kernel version (platform.release() inside
 # a container reports the host kernel).
 #
-# Build and run on a Linux host (or WSL2), not Docker Desktop on macOS,
-# whose network proxy makes TCP_INFO describe the hop to the proxy:
+# Build and run with native Docker Engine on Linux (or directly inside the
+# WSL2 distribution), not Docker Desktop on any operating system. Docker
+# Desktop's TCP proxy makes TCP_INFO describe the hop to the proxy:
 #
-#   sudo modprobe tcp_bbr          # containers cannot load kernel modules
-#   docker build -t cs422-a2 .
-#   docker run --rm --network host --cap-add NET_ADMIN \
-#       -v "$PWD/results":/app/results cs422-a2
+#   ./run_wsl_docker.sh
 #
-#   --network host     use the host's network stack directly (no NAT layer),
-#                      so the sockets see the same path and TCP settings as
-#                      the host itself.
+#   --network host     with native Docker Engine, use the host network stack
+#                      directly so sockets see the host path and TCP settings.
 #   --cap-add NET_ADMIN  setsockopt(TCP_CONGESTION) needs this capability for
 #                      algorithms not in tcp_allowed_congestion_control
 #                      (usually bbr); Docker does not grant it by default.
 #   -v ...results      keep the results after the container exits.
+#
+# run_wsl_docker.sh performs the module check, image build, container
+# preflight, and docker run command above automatically.
 #
 # Arguments after the image name replace the default CMD below, e.g.
 #   docker run ... cs422-a2 listed_iperf3_servers.csv -n 2 --duration 5
@@ -35,16 +35,18 @@ FROM ubuntu:24.04
 # requirements.txt pin used for local development) works. Removing the apt
 # lists afterwards keeps the image smaller.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends python3 python3-matplotlib \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        python3 python3-matplotlib \
     && rm -rf /var/lib/apt/lists/*
 
 # Print output immediately instead of buffering it, so progress and the
 # summary table show up in `docker run` output (and `docker logs`) as they
 # happen.
-ENV PYTHONUNBUFFERED=1
+ENV PYTHONUNBUFFERED=1 \
+    MPLCONFIGDIR=/tmp/matplotlib
 
 WORKDIR /app
-COPY *.py listed_iperf3_servers.csv ./
+COPY *.py requirements.txt listed_iperf3_servers.csv ./
 
 # The image runs the pipeline; CMD holds the default campaign (the options
 # in README.md), which any arguments given to `docker run` replace.
